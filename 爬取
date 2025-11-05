@@ -1,0 +1,669 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import os\n",
+    "import requests\n",
+    "# import cloudscraper\n",
+    "from bs4 import BeautifulSoup\n",
+    "import pandas as pd\n",
+    "import time\n",
+    "import json\n",
+    "from dateutil import parser\n",
+    "from tqdm import trange\n",
+    "from html import unescape\n",
+    "from pathlib import Path\n",
+    "import traceback\n",
+    "import random\n",
+    "\n",
+    "%matplotlib inline"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "data_folder = \"data/\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 创建文件目录结构\n",
+    "folders = [\n",
+    "    \"aggregate/\",\n",
+    "    \"data_0/\",\n",
+    "    \"data_1/\",\n",
+    "    \"data_2/\"\n",
+    "]\n",
+    "\n",
+    "files = [\n",
+    "    \"cookie.txt\"\n",
+    "]\n",
+    "\n",
+    "for folder in folders:\n",
+    "    Path(os.path.join(data_folder, folder)).mkdir(parents=True, exist_ok=True)\n",
+    "for file in files:\n",
+    "    Path(os.path.join(data_folder, file)).touch(exist_ok=True)\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "cookie 放在 data/cookie.txt 里"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def request_get_bs(url, docu_parser = \"html.parser\"):\n",
+    "    with open(os.path.join(data_folder, \"cookie.txt\"), \"r\", encoding=\"utf-8\") as f:\n",
+    "        cookie = f.read()\n",
+    "        if not cookie:\n",
+    "            raise Exception(\"No cookie storage in cookie.txt!\")\n",
+    "    headers = {\n",
+    "        \"Host\": \"scholar.xjtlu.edu.cn\",\n",
+    "        \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36\",\n",
+    "        \"Accept\": \"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\",\n",
+    "        \"Referer\": \"https://scholar.xjtlu.edu.cn/\",\n",
+    "        \"Cookie\":cookie\n",
+    "    }\n",
+    "    web_res = requests.get(url, headers=headers)\n",
+    "    time.sleep(0.2)\n",
+    "    if web_res.status_code != 200:\n",
+    "        raise Exception(\"Code not 200\")\n",
+    "    if \"<h1>Checking if the site connection is secure</h1>\" in web_res.text:\n",
+    "        raise Exception(\"Need Connection Checking\")\n",
+    "    return BeautifulSoup(web_res.text, docu_parser)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# 爬所有老师url"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_part_tutor_urls(page):\n",
+    "    page_bs = request_get_bs(\"https://scholar.xjtlu.edu.cn/en/persons/?indexableKeyword=%2Fdk%2Fatira%2Fpure%2Fkeywords%2FPerson_Types%2Fstaff&nofollow=true&page={1}\")\n",
+    "    a_box_list = page_bs.find_all(\"a\", rel=\"Person\")\n",
+    "    return [a_box.get(\"href\").replace(\"http\", \"https\") for a_box in a_box_list]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "已存在: data/aggregate\\all_tutor_urls.txt\n"
+     ]
+    }
+   ],
+   "source": [
+    "all_tutor_url_filepath = os.path.join(data_folder, \"aggregate\", \"all_tutor_urls.txt\")\n",
+    "if not os.path.exists(all_tutor_url_filepath):\n",
+    "    print(\"获取所有老师详情页url...\")\n",
+    "    # 爬取所有老师url\n",
+    "    all_tutor_urls = []\n",
+    "    for page in trange(0, 29 + 1):\n",
+    "        all_tutor_urls.extend(get_part_tutor_urls(page))\n",
+    "        time.sleep(1)\n",
+    "\n",
+    "    # 写入\n",
+    "    json_url_list = json.dumps({\n",
+    "        \"all_tutor_urls\":all_tutor_urls\n",
+    "    })\n",
+    "    with open(all_tutor_url_filepath, \"w\", encoding=\"utf-8\") as f:\n",
+    "        f.write(json_url_list)\n",
+    "else:\n",
+    "    print(f\"已存在: {all_tutor_url_filepath}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 读取保存的url\n",
+    "with open(all_tutor_url_filepath, \"r\", encoding=\"utf-8\") as f:\n",
+    "    all_tutor_urls = json.loads(f.read())[\"all_tutor_urls\"]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "1500\n"
+     ]
+    }
+   ],
+   "source": [
+    "# 检查总tutor个数\n",
+    "print(len(all_tutor_urls))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# 爬单个老师信息"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def find_part_info(bs_obj, key_string, separate = False, first = \"h3\", follow = \"div\", direction_down = True):\n",
+    "    first_box = bs_obj.find(first, string=key_string)\n",
+    "    if not first_box:\n",
+    "        return [] if separate else None\n",
+    "    if direction_down:\n",
+    "        next_box = first_box.find_next(follow)\n",
+    "    else:\n",
+    "        next_box = first_box.find_previous(follow)\n",
+    "    if separate:\n",
+    "        res_list = []\n",
+    "        for each in next_box.children:\n",
+    "            res_list.append(each.text.strip()) if each.text.strip() else None\n",
+    "        return res_list\n",
+    "    else:\n",
+    "        return next_box.text.strip()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def find_finger_prints(url):\n",
+    "    try:\n",
+    "        bs = request_get_bs(url)\n",
+    "        tag_boxes = bs.find_all(\"div\", class_ = \"person-fingerprint-thesauri\")\n",
+    "        if not tag_boxes:\n",
+    "            return []\n",
+    "        result = []\n",
+    "        for tag_box in tag_boxes:\n",
+    "            # print(tag.find(\"h3\").text)\n",
+    "            tags = tag_box.find(\"ol\").find_all(\"li\")\n",
+    "            for tag in tags:\n",
+    "                value = round(float(tag.find(\"button\").get(\"data-rank-value\")), 2)\n",
+    "                name = tag.find(\"span\", class_=\"concept\").text.strip()\n",
+    "                result.append([name, value])\n",
+    "        return result\n",
+    "    except Exception as e:\n",
+    "        traceback.print_exc()\n",
+    "        raise Exception(f\"find_finger_prints: Error in {url}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def find_xml_item(url):\n",
+    "    try:\n",
+    "        bs = request_get_bs(url, docu_parser=\"xml\")\n",
+    "        items = []\n",
+    "        # print(bs)\n",
+    "        for item in bs.find_all(\"item\"):\n",
+    "            item_data = {}\n",
+    "            item_data['title'] = item.title.text.strip() if item.title else None\n",
+    "            item_data['link'] = item.link.text.strip().replace(\"http\", \"https\") if item.link else None\n",
+    "            # item_data['guid'] = item.guid.text.strip().replace(\"http\", \"https\") if item.guid else None\n",
+    "            item_data['pubDate'] = item.pubDate.text.strip() if item.pubDate else None\n",
+    "            item_data['dc_date'] = item.find('dc:date').text.strip() if item.find('dc:date') else None\n",
+    "            if item.description:\n",
+    "                desc_soup = BeautifulSoup(unescape(item.description.text), 'html.parser')\n",
+    "                # 提取作者\n",
+    "                authors = []\n",
+    "                for span in desc_soup.find_all('span'):\n",
+    "                    if span.text and 'person' in span.parent.get('class', []):\n",
+    "                        # print(span.parent)\n",
+    "                        authors.append({\n",
+    "                            \"name\": span.text.strip(),\n",
+    "                            \"url\": span.parent.get(\"href\", \"\").strip().replace(\"http\", \"https\")\n",
+    "                        })\n",
+    "                item_data['authors'] = authors\n",
+    "                \n",
+    "                # 提取项目类型\n",
+    "                type_span = desc_soup.find('span', class_='type_classification')\n",
+    "                item_data['project_type'] = type_span.text.strip() if type_span else None\n",
+    "                \n",
+    "                # 提取日期范围\n",
+    "                dates = desc_soup.find_all('span', class_='date')\n",
+    "                for ind in range(len(dates)):\n",
+    "                    item_data[f'desc_date_{ind}'] = dates[ind].text.strip()\n",
+    "            \n",
+    "            items.append(item_data)\n",
+    "        # return\n",
+    "        return items\n",
+    "    except Exception as e:\n",
+    "        traceback.print_exc()\n",
+    "        raise Exception(f\"find_xml_item: Error in {url}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def find_project_detail(url):\n",
+    "    try:\n",
+    "        if not url:\n",
+    "            return {}\n",
+    "        bs = request_get_bs(url)\n",
+    "        res = {}\n",
+    "        # relations organisations\n",
+    "        res[\"org\"] = [each.text.strip() for each in bs.find_all(\"a\", rel = \"Organisation\")]\n",
+    "        # type_family\n",
+    "        _box = bs.find(\"span\", class_=\"type_family\")\n",
+    "        res[\"type_family\"] = _box.text.strip().replace(\":\",\"\") if _box else None\n",
+    "        # type_classification\n",
+    "        res[\"type_classification\"] = _box.parent.text.strip() if _box else None\n",
+    "        # fund amount\n",
+    "        fund_box = bs.find(\"div\", class_=\"fund_amount_rmb\")\n",
+    "        res[\"fund\"] = fund_box.find(\"div\", class_=\"textblock\").text.strip() if fund_box else None\n",
+    "        # abstract, description\n",
+    "        abs_h2 = bs.find(\"h2\", string=\"Abstract\")\n",
+    "        des_h3 = bs.find(\"h3\", string=\"Description\")\n",
+    "        if abs_h2:\n",
+    "            word_box = abs_h2.find_next_sibling(\"div\", class_=\"textblock\")\n",
+    "            res[\"abstract\"] = word_box.text.strip() if word_box else None\n",
+    "        if des_h3:\n",
+    "            word_box = des_h3.find_next_sibling(\"div\", class_=\"textblock\")\n",
+    "            res[\"abstract\"] = word_box.text.strip() if word_box else None\n",
+    "        content_area = bs.find(class_=\"content-content\")\n",
+    "        # 提取中间meta信息\n",
+    "        # 遍历table的每个tr，提取th:td\n",
+    "        for table_box in content_area.find_all(\"table\"):\n",
+    "            for row_ in table_box.find_all(\"tr\"):\n",
+    "                res[row_.find(\"th\").text.strip()] = row_.find(\"td\").text.strip()\n",
+    "        # 遍历ul每个li，提取keyword\n",
+    "        keyword_list = []\n",
+    "        key_box = content_area.find(\"ul\", class_ = \"relations keywords\")\n",
+    "        if key_box:\n",
+    "            for keyword in key_box.find_all(\"li\"):\n",
+    "                keyword_list.append(keyword.text.strip())\n",
+    "        res[\"keywords\"] = keyword_list\n",
+    "        # cite BIBTEX\n",
+    "        bib_cite_box = bs.find(\"div\", id=\"cite-BIBTEX\")\n",
+    "        res[\"bibtex\"] = bib_cite_box.text.strip() if bib_cite_box else None\n",
+    "        return res\n",
+    "    except Exception as e:\n",
+    "        traceback.print_exc()\n",
+    "        raise Exception(f\"find_project_detail: Error in {url}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_tutor_overview(overview_url):\n",
+    "    tbs = request_get_bs(overview_url)\n",
+    "    tinfo = {}\n",
+    "    tinfo[\"Url\"] = overview_url\n",
+    "    # Name\n",
+    "    name_h1 = tbs.find(\"div\", class_=\"header person-details\").find(\"h1\")\n",
+    "    tinfo[\"Name\"] = name_h1.text.strip()\n",
+    "    # Image\n",
+    "    pic_box = tbs.find(\"picture\")\n",
+    "    pic_url = None\n",
+    "    if pic_box:\n",
+    "        pic_url = \"https://scholar.xjtlu.edu.cn/files-asset/{}/testfilename.jpg\".format(pic_box.find(\"source\").get(\"srcset\").split(\"/\")[2])\n",
+    "    tinfo[\"Image Url\"] = pic_url if pic_url else None\n",
+    "    # Role\n",
+    "    role_box = name_h1.find_next_sibling(\"div\")\n",
+    "    tinfo[\"Role\"] = role_box.find(\"p\").text.strip() if role_box else None\n",
+    "    # Department\n",
+    "    dep_box = role_box.find_next_sibling(\"div\")\n",
+    "    dep_lis = dep_box.find(\"ul\").find(\"li\") if dep_box else []\n",
+    "    tinfo[\"Department\"] = dep_lis.text.strip() if dep_lis else None\n",
+    "    # Phone\n",
+    "    tinfo[\"Phone\"] = find_part_info(tbs, \"Phone\", separate=False, first=\"span\", follow=\"span\", direction_down=True)\n",
+    "    # Email\n",
+    "    email_box = tbs.find(\"span\", string=\"Email\")\n",
+    "    email_str = \"\"\n",
+    "    if email_box:\n",
+    "        email_box = email_box.find_next(\"a\")\n",
+    "        if email_box:\n",
+    "            for each in email_box.children:\n",
+    "                email_str += each.text.replace(\"encryptedA();\",\"@\").replace(\"encryptedDot();\",\".\")\n",
+    "    email_str = email_str if email_str else None\n",
+    "    tinfo[\"Email\"] = email_str\n",
+    "    # Citation\n",
+    "    tinfo[\"Citation\"] = find_part_info(tbs, \"Citations\", separate=False, first=\"div\", follow=\"div\", direction_down=False)\n",
+    "    # H-index\n",
+    "    tinfo[\"H-index\"] = find_part_info(tbs, \"h-index\", separate=False, first=\"div\", follow=\"div\", direction_down=False)\n",
+    "    # =====Personal Profile=======\n",
+    "    tinfo[\"Personal Profile\"] = find_part_info(tbs, \"Personal profile\")\n",
+    "    # Research Interests\n",
+    "    tinfo[\"Research Interests\"] = find_part_info(tbs, \"Research interests\", separate=True)\n",
+    "    # Experience\n",
+    "    tinfo[\"Experience\"] = find_part_info(tbs, \"Experience\", separate=True)\n",
+    "    # Teaching\n",
+    "    tinfo[\"Teaching\"] = find_part_info(tbs, \"Teaching\", separate=True)\n",
+    "    # Awards and honours\n",
+    "    tinfo[\"Awards and Honours\"] = find_part_info(tbs, \"Awards and honours\", separate=True)\n",
+    "    # ===========================\n",
+    "    # =======Education==========\n",
+    "    tinfo[\"Education\"] = find_part_info(tbs, \"Education/Academic qualification\", separate=True)\n",
+    "    # Research Areas\n",
+    "    tinfo[\"Research Areas\"] = find_part_info(tbs, \"Research areas\", separate=True, first=\"h3\", follow=\"ul\")\n",
+    "    # Person Types\n",
+    "    tinfo[\"Person Types\"] = find_part_info(tbs, \"Person Types\", separate=True, first=\"h3\", follow=\"ul\")\n",
+    "    # ===========================\n",
+    "    # Fingerprint\n",
+    "    finger_print_url = overview_url + \"fingerprints/\"\n",
+    "    tinfo[\"Fingerprint\"] = find_finger_prints(finger_print_url)\n",
+    "    # Projects\n",
+    "    projects_url = overview_url + \"projects/\"\n",
+    "    tinfo[\"Projects\"] = find_xml_item(projects_url+\"?format=rss\")\n",
+    "    for each_p in tinfo[\"Projects\"]:\n",
+    "        if each_p[\"link\"]:\n",
+    "            each_p.update(find_project_detail(each_p[\"link\"]))\n",
+    "    # Publications\n",
+    "    pub_url = overview_url + \"publications/\"\n",
+    "    tinfo[\"Publications\"] = find_xml_item(pub_url+\"?format=rss\")\n",
+    "    for each_p in tinfo[\"Publications\"]:\n",
+    "        if each_p[\"link\"]:\n",
+    "            each_p.update(find_project_detail(each_p[\"link\"]))\n",
+    "    # Activities\n",
+    "    act_url = overview_url + \"activities/\"\n",
+    "    tinfo[\"Activities\"] = find_xml_item(act_url+\"?format=rss\")\n",
+    "    for each_p in tinfo[\"Activities\"]:\n",
+    "        if each_p[\"link\"]:\n",
+    "            each_p.update(find_project_detail(each_p[\"link\"]))\n",
+    "\n",
+    "    # Similar Profiles\n",
+    "    sbs = request_get_bs(overview_url+\"similar/\")\n",
+    "    tinfo[\"Similar Profiles\"] = [each.text.strip() for each in sbs.find_all(\"a\", rel=\"Person\")]\n",
+    "\n",
+    "    return tinfo"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{'Url': 'https://scholar.xjtlu.edu.cn/en/persons/RheanneAnderson/',\n",
+       " 'Name': 'Rheanne Anderson',\n",
+       " 'Image Url': 'https://scholar.xjtlu.edu.cn/files-asset/35383034/testfilename.jpg',\n",
+       " 'Role': 'Senior Language Lecturer',\n",
+       " 'Department': 'English Language Centre',\n",
+       " 'Phone': '+86 (0)512 81888731',\n",
+       " 'Email': 'Rheanne.Anderson@xjtlu.edu.cn',\n",
+       " 'Citation': None,\n",
+       " 'H-index': None,\n",
+       " 'Personal Profile': 'I have been teaching since 2000, and have lived in many countries. I have taught ESL, EFL, IELTS prep, Business courses, Academic Foundations and Post Graduate English. I have presented at 6 different conferences; both research and teacher training sessions. I joined XJTLU in August of 2023.',\n",
+       " 'Research Interests': [],\n",
+       " 'Experience': [],\n",
+       " 'Teaching': [],\n",
+       " 'Awards and Honours': [],\n",
+       " 'Education': [],\n",
+       " 'Research Areas': [],\n",
+       " 'Person Types': ['Staff'],\n",
+       " 'Fingerprint': [],\n",
+       " 'Projects': [],\n",
+       " 'Publications': [],\n",
+       " 'Activities': [],\n",
+       " 'Similar Profiles': []}"
+      ]
+     },
+     "execution_count": 20,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "get_tutor_overview(all_tutor_urls[10])\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# 可断点继续地爬取所有老师信息\n",
+    "\n",
+    "每个老师信息存储为单个json文件，已经爬取完毕的json存储在 data_0 文件夹下，以老师的小写url名字 作为json文件名"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_lower_name_from_url(url):\n",
+    "    ulist= url.split(\"/\")\n",
+    "    return ulist[-1].lower() if ulist[-1] else ulist[-2].lower()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "1/1500 开始爬取 syedabbas 已经爬取: data/data_0\\syedabbas.json\n",
+      "2/1500 开始爬取 dharmaadhikari 已经爬取: data/data_0\\dharmaadhikari.json\n",
+      "3/1500 开始爬取 tiagoadorno 已经爬取: data/data_0\\tiagoadorno.json\n",
+      "4/1500 开始爬取 fawadahmed 已经爬取: data/data_0\\fawadahmed.json\n",
+      "5/1500 开始爬取 xin-ai 已经爬取: data/data_0\\xin-ai.json\n",
+      "6/1500 开始爬取 allisonairhart 已经爬取: data/data_0\\allisonairhart.json\n",
+      "7/1500 开始爬取 khalidakhal 已经爬取: data/data_0\\khalidakhal.json\n",
+      "8/1500 开始爬取 mohsenalattar 已经爬取: data/data_0\\mohsenalattar.json\n",
+      "9/1500 开始爬取 silviaalbano 成功\n",
+      "10/1500 开始爬取 ericamigues 已经爬取: data/data_0\\ericamigues.json\n",
+      "11/1500 开始爬取 rheanneanderson 已经爬取: data/data_0\\rheanneanderson.json\n",
+      "12/1500 开始爬取 sandrianomoore 已经爬取: data/data_0\\sandrianomoore.json\n",
+      "13/1500 开始爬取 jelenaandric 成功\n",
+      "14/1500 开始爬取 andrejangelovski 成功\n",
+      "15/1500 开始爬取 aizuddinanuar 成功\n",
+      "16/1500 开始爬取 yauhenarnatovich 爬取异常\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "Traceback (most recent call last):\n",
+      "  File \"C:\\Users\\11137\\AppData\\Local\\Temp\\ipykernel_21616\\2545722425.py\", line 12, in <module>\n",
+      "    tutor_details = get_tutor_overview(tutor_url)\n",
+      "                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"C:\\Users\\11137\\AppData\\Local\\Temp\\ipykernel_21616\\1183286401.py\", line 60, in get_tutor_overview\n",
+      "    tinfo[\"Projects\"] = find_xml_item(projects_url+\"?format=rss\")\n",
+      "                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"C:\\Users\\11137\\AppData\\Local\\Temp\\ipykernel_21616\\1243822319.py\", line 3, in find_xml_item\n",
+      "    bs = request_get_bs(url, docu_parser=\"xml\")\n",
+      "         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"C:\\Users\\11137\\AppData\\Local\\Temp\\ipykernel_21616\\2512011935.py\", line 13, in request_get_bs\n",
+      "    web_res = requests.get(url, headers=headers)\n",
+      "              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\api.py\", line 73, in get\n",
+      "    return request(\"get\", url, params=params, **kwargs)\n",
+      "           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\api.py\", line 59, in request\n",
+      "    return session.request(method=method, url=url, **kwargs)\n",
+      "           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\sessions.py\", line 589, in request\n",
+      "    resp = self.send(prep, **send_kwargs)\n",
+      "           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\sessions.py\", line 703, in send\n",
+      "    r = adapter.send(request, **kwargs)\n",
+      "        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\adapters.py\", line 667, in send\n",
+      "    resp = conn.urlopen(\n",
+      "           ^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\urllib3\\connectionpool.py\", line 787, in urlopen\n",
+      "    response = self._make_request(\n",
+      "               ^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\urllib3\\connectionpool.py\", line 534, in _make_request\n",
+      "    response = conn.getresponse()\n",
+      "               ^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\site-packages\\urllib3\\connection.py\", line 516, in getresponse\n",
+      "    httplib_response = super().getresponse()\n",
+      "                       ^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\http\\client.py\", line 1428, in getresponse\n",
+      "    response.begin()\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\http\\client.py\", line 331, in begin\n",
+      "    version, status, reason = self._read_status()\n",
+      "                              ^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\http\\client.py\", line 292, in _read_status\n",
+      "    line = str(self.fp.readline(_MAXLINE + 1), \"iso-8859-1\")\n",
+      "               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\socket.py\", line 708, in readinto\n",
+      "    return self._sock.recv_into(b)\n",
+      "           ^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\ssl.py\", line 1252, in recv_into\n",
+      "    return self.read(nbytes, buffer)\n",
+      "           ^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "  File \"c:\\Users\\11137\\miniconda3\\Lib\\ssl.py\", line 1104, in read\n",
+      "    return self._sslobj.read(len, buffer)\n",
+      "           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "KeyboardInterrupt\n"
+     ]
+    },
+    {
+     "ename": "Exception",
+     "evalue": "Meet KeyboardInterrupt",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[1;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[1;31mKeyboardInterrupt\u001b[0m                         Traceback (most recent call last)",
+      "Cell \u001b[1;32mIn[25], line 12\u001b[0m\n\u001b[0;32m     11\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[1;32m---> 12\u001b[0m     tutor_details \u001b[38;5;241m=\u001b[39m \u001b[43mget_tutor_overview\u001b[49m\u001b[43m(\u001b[49m\u001b[43mtutor_url\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m     13\u001b[0m     \u001b[38;5;28;01mwith\u001b[39;00m \u001b[38;5;28mopen\u001b[39m(json_path, \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mw\u001b[39m\u001b[38;5;124m\"\u001b[39m, encoding\u001b[38;5;241m=\u001b[39m\u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mutf-8\u001b[39m\u001b[38;5;124m\"\u001b[39m) \u001b[38;5;28;01mas\u001b[39;00m f:\n",
+      "Cell \u001b[1;32mIn[19], line 60\u001b[0m, in \u001b[0;36mget_tutor_overview\u001b[1;34m(overview_url)\u001b[0m\n\u001b[0;32m     59\u001b[0m projects_url \u001b[38;5;241m=\u001b[39m overview_url \u001b[38;5;241m+\u001b[39m \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mprojects/\u001b[39m\u001b[38;5;124m\"\u001b[39m\n\u001b[1;32m---> 60\u001b[0m tinfo[\u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mProjects\u001b[39m\u001b[38;5;124m\"\u001b[39m] \u001b[38;5;241m=\u001b[39m \u001b[43mfind_xml_item\u001b[49m\u001b[43m(\u001b[49m\u001b[43mprojects_url\u001b[49m\u001b[38;5;241;43m+\u001b[39;49m\u001b[38;5;124;43m\"\u001b[39;49m\u001b[38;5;124;43m?format=rss\u001b[39;49m\u001b[38;5;124;43m\"\u001b[39;49m\u001b[43m)\u001b[49m\n\u001b[0;32m     61\u001b[0m \u001b[38;5;28;01mfor\u001b[39;00m each_p \u001b[38;5;129;01min\u001b[39;00m tinfo[\u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mProjects\u001b[39m\u001b[38;5;124m\"\u001b[39m]:\n",
+      "Cell \u001b[1;32mIn[17], line 3\u001b[0m, in \u001b[0;36mfind_xml_item\u001b[1;34m(url)\u001b[0m\n\u001b[0;32m      2\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[1;32m----> 3\u001b[0m     bs \u001b[38;5;241m=\u001b[39m \u001b[43mrequest_get_bs\u001b[49m\u001b[43m(\u001b[49m\u001b[43murl\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mdocu_parser\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[38;5;124;43m\"\u001b[39;49m\u001b[38;5;124;43mxml\u001b[39;49m\u001b[38;5;124;43m\"\u001b[39;49m\u001b[43m)\u001b[49m\n\u001b[0;32m      4\u001b[0m     items \u001b[38;5;241m=\u001b[39m []\n",
+      "Cell \u001b[1;32mIn[5], line 13\u001b[0m, in \u001b[0;36mrequest_get_bs\u001b[1;34m(url, docu_parser)\u001b[0m\n\u001b[0;32m      6\u001b[0m headers \u001b[38;5;241m=\u001b[39m {\n\u001b[0;32m      7\u001b[0m     \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mHost\u001b[39m\u001b[38;5;124m\"\u001b[39m: \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mscholar.xjtlu.edu.cn\u001b[39m\u001b[38;5;124m\"\u001b[39m,\n\u001b[0;32m      8\u001b[0m     \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mUser-Agent\u001b[39m\u001b[38;5;124m\"\u001b[39m: \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mMozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36\u001b[39m\u001b[38;5;124m\"\u001b[39m,\n\u001b[1;32m   (...)\u001b[0m\n\u001b[0;32m     11\u001b[0m     \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mCookie\u001b[39m\u001b[38;5;124m\"\u001b[39m:cookie\n\u001b[0;32m     12\u001b[0m }\n\u001b[1;32m---> 13\u001b[0m web_res \u001b[38;5;241m=\u001b[39m \u001b[43mrequests\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mget\u001b[49m\u001b[43m(\u001b[49m\u001b[43murl\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mheaders\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mheaders\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m     14\u001b[0m time\u001b[38;5;241m.\u001b[39msleep(\u001b[38;5;241m0.2\u001b[39m)\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\api.py:73\u001b[0m, in \u001b[0;36mget\u001b[1;34m(url, params, **kwargs)\u001b[0m\n\u001b[0;32m     63\u001b[0m \u001b[38;5;250m\u001b[39m\u001b[38;5;124mr\u001b[39m\u001b[38;5;124;03m\"\"\"Sends a GET request.\u001b[39;00m\n\u001b[0;32m     64\u001b[0m \n\u001b[0;32m     65\u001b[0m \u001b[38;5;124;03m:param url: URL for the new :class:`Request` object.\u001b[39;00m\n\u001b[1;32m   (...)\u001b[0m\n\u001b[0;32m     70\u001b[0m \u001b[38;5;124;03m:rtype: requests.Response\u001b[39;00m\n\u001b[0;32m     71\u001b[0m \u001b[38;5;124;03m\"\"\"\u001b[39;00m\n\u001b[1;32m---> 73\u001b[0m \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[43mrequest\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;124;43m\"\u001b[39;49m\u001b[38;5;124;43mget\u001b[39;49m\u001b[38;5;124;43m\"\u001b[39;49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43murl\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mparams\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mparams\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[43mkwargs\u001b[49m\u001b[43m)\u001b[49m\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\api.py:59\u001b[0m, in \u001b[0;36mrequest\u001b[1;34m(method, url, **kwargs)\u001b[0m\n\u001b[0;32m     58\u001b[0m \u001b[38;5;28;01mwith\u001b[39;00m sessions\u001b[38;5;241m.\u001b[39mSession() \u001b[38;5;28;01mas\u001b[39;00m session:\n\u001b[1;32m---> 59\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[43msession\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mrequest\u001b[49m\u001b[43m(\u001b[49m\u001b[43mmethod\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mmethod\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43murl\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43murl\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[43mkwargs\u001b[49m\u001b[43m)\u001b[49m\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\sessions.py:589\u001b[0m, in \u001b[0;36mSession.request\u001b[1;34m(self, method, url, params, data, headers, cookies, files, auth, timeout, allow_redirects, proxies, hooks, stream, verify, cert, json)\u001b[0m\n\u001b[0;32m    588\u001b[0m send_kwargs\u001b[38;5;241m.\u001b[39mupdate(settings)\n\u001b[1;32m--> 589\u001b[0m resp \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43msend\u001b[49m\u001b[43m(\u001b[49m\u001b[43mprep\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[43msend_kwargs\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    591\u001b[0m \u001b[38;5;28;01mreturn\u001b[39;00m resp\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\sessions.py:703\u001b[0m, in \u001b[0;36mSession.send\u001b[1;34m(self, request, **kwargs)\u001b[0m\n\u001b[0;32m    702\u001b[0m \u001b[38;5;66;03m# Send the request\u001b[39;00m\n\u001b[1;32m--> 703\u001b[0m r \u001b[38;5;241m=\u001b[39m \u001b[43madapter\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43msend\u001b[49m\u001b[43m(\u001b[49m\u001b[43mrequest\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[43mkwargs\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    705\u001b[0m \u001b[38;5;66;03m# Total elapsed time of the request (approximately)\u001b[39;00m\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\requests\\adapters.py:667\u001b[0m, in \u001b[0;36mHTTPAdapter.send\u001b[1;34m(self, request, stream, timeout, verify, cert, proxies)\u001b[0m\n\u001b[0;32m    666\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[1;32m--> 667\u001b[0m     resp \u001b[38;5;241m=\u001b[39m \u001b[43mconn\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43murlopen\u001b[49m\u001b[43m(\u001b[49m\n\u001b[0;32m    668\u001b[0m \u001b[43m        \u001b[49m\u001b[43mmethod\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mrequest\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mmethod\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    669\u001b[0m \u001b[43m        \u001b[49m\u001b[43murl\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43murl\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    670\u001b[0m \u001b[43m        \u001b[49m\u001b[43mbody\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mrequest\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mbody\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    671\u001b[0m \u001b[43m        \u001b[49m\u001b[43mheaders\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mrequest\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mheaders\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    672\u001b[0m \u001b[43m        \u001b[49m\u001b[43mredirect\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[38;5;28;43;01mFalse\u001b[39;49;00m\u001b[43m,\u001b[49m\n\u001b[0;32m    673\u001b[0m \u001b[43m        \u001b[49m\u001b[43massert_same_host\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[38;5;28;43;01mFalse\u001b[39;49;00m\u001b[43m,\u001b[49m\n\u001b[0;32m    674\u001b[0m \u001b[43m        \u001b[49m\u001b[43mpreload_content\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[38;5;28;43;01mFalse\u001b[39;49;00m\u001b[43m,\u001b[49m\n\u001b[0;32m    675\u001b[0m \u001b[43m        \u001b[49m\u001b[43mdecode_content\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[38;5;28;43;01mFalse\u001b[39;49;00m\u001b[43m,\u001b[49m\n\u001b[0;32m    676\u001b[0m \u001b[43m        \u001b[49m\u001b[43mretries\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mmax_retries\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    677\u001b[0m \u001b[43m        \u001b[49m\u001b[43mtimeout\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mtimeout\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    678\u001b[0m \u001b[43m        \u001b[49m\u001b[43mchunked\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mchunked\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    679\u001b[0m \u001b[43m    \u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    681\u001b[0m \u001b[38;5;28;01mexcept\u001b[39;00m (ProtocolError, \u001b[38;5;167;01mOSError\u001b[39;00m) \u001b[38;5;28;01mas\u001b[39;00m err:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\urllib3\\connectionpool.py:787\u001b[0m, in \u001b[0;36mHTTPConnectionPool.urlopen\u001b[1;34m(self, method, url, body, headers, retries, redirect, assert_same_host, timeout, pool_timeout, release_conn, chunked, body_pos, preload_content, decode_content, **response_kw)\u001b[0m\n\u001b[0;32m    786\u001b[0m \u001b[38;5;66;03m# Make the request on the HTTPConnection object\u001b[39;00m\n\u001b[1;32m--> 787\u001b[0m response \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_make_request\u001b[49m\u001b[43m(\u001b[49m\n\u001b[0;32m    788\u001b[0m \u001b[43m    \u001b[49m\u001b[43mconn\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    789\u001b[0m \u001b[43m    \u001b[49m\u001b[43mmethod\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    790\u001b[0m \u001b[43m    \u001b[49m\u001b[43murl\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    791\u001b[0m \u001b[43m    \u001b[49m\u001b[43mtimeout\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mtimeout_obj\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    792\u001b[0m \u001b[43m    \u001b[49m\u001b[43mbody\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mbody\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    793\u001b[0m \u001b[43m    \u001b[49m\u001b[43mheaders\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mheaders\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    794\u001b[0m \u001b[43m    \u001b[49m\u001b[43mchunked\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mchunked\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    795\u001b[0m \u001b[43m    \u001b[49m\u001b[43mretries\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mretries\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    796\u001b[0m \u001b[43m    \u001b[49m\u001b[43mresponse_conn\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mresponse_conn\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    797\u001b[0m \u001b[43m    \u001b[49m\u001b[43mpreload_content\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mpreload_content\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    798\u001b[0m \u001b[43m    \u001b[49m\u001b[43mdecode_content\u001b[49m\u001b[38;5;241;43m=\u001b[39;49m\u001b[43mdecode_content\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    799\u001b[0m \u001b[43m    \u001b[49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[38;5;241;43m*\u001b[39;49m\u001b[43mresponse_kw\u001b[49m\u001b[43m,\u001b[49m\n\u001b[0;32m    800\u001b[0m \u001b[43m\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    802\u001b[0m \u001b[38;5;66;03m# Everything went great!\u001b[39;00m\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\urllib3\\connectionpool.py:534\u001b[0m, in \u001b[0;36mHTTPConnectionPool._make_request\u001b[1;34m(self, conn, method, url, body, headers, retries, timeout, chunked, response_conn, preload_content, decode_content, enforce_content_length)\u001b[0m\n\u001b[0;32m    533\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[1;32m--> 534\u001b[0m     response \u001b[38;5;241m=\u001b[39m \u001b[43mconn\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mgetresponse\u001b[49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    535\u001b[0m \u001b[38;5;28;01mexcept\u001b[39;00m (BaseSSLError, \u001b[38;5;167;01mOSError\u001b[39;00m) \u001b[38;5;28;01mas\u001b[39;00m e:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\site-packages\\urllib3\\connection.py:516\u001b[0m, in \u001b[0;36mHTTPConnection.getresponse\u001b[1;34m(self)\u001b[0m\n\u001b[0;32m    515\u001b[0m \u001b[38;5;66;03m# Get the response from http.client.HTTPConnection\u001b[39;00m\n\u001b[1;32m--> 516\u001b[0m httplib_response \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;43msuper\u001b[39;49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mgetresponse\u001b[49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    518\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\http\\client.py:1428\u001b[0m, in \u001b[0;36mHTTPConnection.getresponse\u001b[1;34m(self)\u001b[0m\n\u001b[0;32m   1427\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[1;32m-> 1428\u001b[0m     \u001b[43mresponse\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mbegin\u001b[49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m   1429\u001b[0m \u001b[38;5;28;01mexcept\u001b[39;00m \u001b[38;5;167;01mConnectionError\u001b[39;00m:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\http\\client.py:331\u001b[0m, in \u001b[0;36mHTTPResponse.begin\u001b[1;34m(self)\u001b[0m\n\u001b[0;32m    330\u001b[0m \u001b[38;5;28;01mwhile\u001b[39;00m \u001b[38;5;28;01mTrue\u001b[39;00m:\n\u001b[1;32m--> 331\u001b[0m     version, status, reason \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_read_status\u001b[49m\u001b[43m(\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    332\u001b[0m     \u001b[38;5;28;01mif\u001b[39;00m status \u001b[38;5;241m!=\u001b[39m CONTINUE:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\http\\client.py:292\u001b[0m, in \u001b[0;36mHTTPResponse._read_status\u001b[1;34m(self)\u001b[0m\n\u001b[0;32m    291\u001b[0m \u001b[38;5;28;01mdef\u001b[39;00m \u001b[38;5;21m_read_status\u001b[39m(\u001b[38;5;28mself\u001b[39m):\n\u001b[1;32m--> 292\u001b[0m     line \u001b[38;5;241m=\u001b[39m \u001b[38;5;28mstr\u001b[39m(\u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mfp\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mreadline\u001b[49m\u001b[43m(\u001b[49m\u001b[43m_MAXLINE\u001b[49m\u001b[43m \u001b[49m\u001b[38;5;241;43m+\u001b[39;49m\u001b[43m \u001b[49m\u001b[38;5;241;43m1\u001b[39;49m\u001b[43m)\u001b[49m, \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124miso-8859-1\u001b[39m\u001b[38;5;124m\"\u001b[39m)\n\u001b[0;32m    293\u001b[0m     \u001b[38;5;28;01mif\u001b[39;00m \u001b[38;5;28mlen\u001b[39m(line) \u001b[38;5;241m>\u001b[39m _MAXLINE:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\socket.py:708\u001b[0m, in \u001b[0;36mSocketIO.readinto\u001b[1;34m(self, b)\u001b[0m\n\u001b[0;32m    707\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[1;32m--> 708\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_sock\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mrecv_into\u001b[49m\u001b[43m(\u001b[49m\u001b[43mb\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m    709\u001b[0m \u001b[38;5;28;01mexcept\u001b[39;00m timeout:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\ssl.py:1252\u001b[0m, in \u001b[0;36mSSLSocket.recv_into\u001b[1;34m(self, buffer, nbytes, flags)\u001b[0m\n\u001b[0;32m   1249\u001b[0m         \u001b[38;5;28;01mraise\u001b[39;00m \u001b[38;5;167;01mValueError\u001b[39;00m(\n\u001b[0;32m   1250\u001b[0m           \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mnon-zero flags not allowed in calls to recv_into() on \u001b[39m\u001b[38;5;132;01m%s\u001b[39;00m\u001b[38;5;124m\"\u001b[39m \u001b[38;5;241m%\u001b[39m\n\u001b[0;32m   1251\u001b[0m           \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m\u001b[38;5;18m__class__\u001b[39m)\n\u001b[1;32m-> 1252\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mread\u001b[49m\u001b[43m(\u001b[49m\u001b[43mnbytes\u001b[49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mbuffer\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m   1253\u001b[0m \u001b[38;5;28;01melse\u001b[39;00m:\n",
+      "File \u001b[1;32mc:\\Users\\11137\\miniconda3\\Lib\\ssl.py:1104\u001b[0m, in \u001b[0;36mSSLSocket.read\u001b[1;34m(self, len, buffer)\u001b[0m\n\u001b[0;32m   1103\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m buffer \u001b[38;5;129;01mis\u001b[39;00m \u001b[38;5;129;01mnot\u001b[39;00m \u001b[38;5;28;01mNone\u001b[39;00m:\n\u001b[1;32m-> 1104\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_sslobj\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mread\u001b[49m\u001b[43m(\u001b[49m\u001b[38;5;28;43mlen\u001b[39;49m\u001b[43m,\u001b[49m\u001b[43m \u001b[49m\u001b[43mbuffer\u001b[49m\u001b[43m)\u001b[49m\n\u001b[0;32m   1105\u001b[0m \u001b[38;5;28;01melse\u001b[39;00m:\n",
+      "\u001b[1;31mKeyboardInterrupt\u001b[0m: ",
+      "\nDuring handling of the above exception, another exception occurred:\n",
+      "\u001b[1;31mException\u001b[0m                                 Traceback (most recent call last)",
+      "Cell \u001b[1;32mIn[25], line 20\u001b[0m\n\u001b[0;32m     18\u001b[0m     traceback\u001b[38;5;241m.\u001b[39mprint_exc()\n\u001b[0;32m     19\u001b[0m     \u001b[38;5;28;01mif\u001b[39;00m \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mKeyboardInterrupt\u001b[39m\u001b[38;5;124m\"\u001b[39m \u001b[38;5;129;01min\u001b[39;00m traceback\u001b[38;5;241m.\u001b[39mformat_exc():\n\u001b[1;32m---> 20\u001b[0m         \u001b[38;5;28;01mraise\u001b[39;00m \u001b[38;5;167;01mException\u001b[39;00m(\u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mMeet KeyboardInterrupt\u001b[39m\u001b[38;5;124m\"\u001b[39m)\n\u001b[0;32m     21\u001b[0m \u001b[38;5;66;03m# 每爬完一个老师的信息，随机等几秒种\u001b[39;00m\n\u001b[0;32m     22\u001b[0m time\u001b[38;5;241m.\u001b[39msleep(random\u001b[38;5;241m.\u001b[39mrandint(\u001b[38;5;241m2\u001b[39m,\u001b[38;5;241m5\u001b[39m))\n",
+      "\u001b[1;31mException\u001b[0m: Meet KeyboardInterrupt"
+     ]
+    }
+   ],
+   "source": [
+    "data_0_path = os.path.join(data_folder, \"data_0\")\n",
+    "\n",
+    "for ind, tutor_url in enumerate(all_tutor_urls):\n",
+    "    lower_name = get_lower_name_from_url(tutor_url)\n",
+    "    json_path = os.path.join(data_0_path, f\"{lower_name}.json\")\n",
+    "    print(f\"{ind+1}/{len(all_tutor_urls)} 开始爬取 {lower_name}\", end=\"\")\n",
+    "    # 跳过已经有json文件存在的\n",
+    "    if os.path.exists(json_path):\n",
+    "        print(f\" 已经爬取: {json_path}\")\n",
+    "        continue\n",
+    "    try:\n",
+    "        tutor_details = get_tutor_overview(tutor_url)\n",
+    "        with open(json_path, \"w\", encoding=\"utf-8\") as f:\n",
+    "            f.write(json.dumps(tutor_details, indent=2))\n",
+    "        print(f\" 成功\")\n",
+    "    except:\n",
+    "        print(f\" 爬取异常\")\n",
+    "        traceback.print_exc()\n",
+    "        if \"KeyboardInterrupt\" in traceback.format_exc():\n",
+    "            raise Exception(\"Meet KeyboardInterrupt\")\n",
+    "    # 每爬完一个老师的信息，随机等几秒种\n",
+    "    time.sleep(random.randint(2,5))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "爬取的老师信息数量 0 / 1500\n"
+     ]
+    }
+   ],
+   "source": [
+    "# 检查json文件爬取情况\n",
+    "check_json_filename_set = set([each for each in os.listdir(data_0_path) if each.endswith(\"json\")])\n",
+    "print(f\"已经保存的爬取的老师信息数量 {len(check_json_filename_set)} / {len(all_tutor_urls)}\")"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "base",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
