@@ -1,0 +1,55 @@
+#ais-input::placeholder { color: #94a3b8; opacity: 1; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+
+@keyframes ai-progress {
+    0% { width: 0%; }
+    30% { width: 40%; }
+    80% { width: 90%; }
+    100% { width: 98%; }
+}
+
+/* AI Summary Markdown Styles (Overriding Tailwind Preflight) */
+.ai-markdown-content h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    color: #0f172a;
+}
+.ai-markdown-content h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-top: 1.25rem;
+    margin-bottom: 0.75rem;
+    color: #1e293b;
+}
+.ai-markdown-content h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    color: #334155;
+}
+.ai-markdown-content ul {
+    list-style-type: disc;
+    padding-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+.ai-markdown-content ol {
+    list-style-type: decimal;
+    padding-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+.ai-markdown-content li {
+    margin-bottom: 0.25rem;
+}
+.ai-markdown-content p {
+    margin-bottom: 1rem;
+}
+.ai-markdown-content strong {
+    font-weight: 700;
+    color: #0f172a;
+}
